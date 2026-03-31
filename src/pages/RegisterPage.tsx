@@ -5,18 +5,25 @@ import { Leaf } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function RegisterPage() {
-  const [form, setForm] = useState({ name: '', email: '', password: '', role: 'canteen' as 'canteen' | 'ngo', organization: '', location: '', capacity: '' });
+  const [form, setForm] = useState({ name: '', email: '', password: '', role: 'canteen' as 'canteen' | 'ngo', organization: '', location: '', capacity: '', reg_no: '', ngoType: 'Trust', phone: '', address: '' });
   const { register } = useAuth();
   const navigate = useNavigate();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const err = register({
+    setLoading(true);
+    const { error, status } = await register({
       ...form,
       capacity: form.role === 'ngo' ? Number(form.capacity) || 100 : undefined,
     });
-    if (err) { toast.error(err); return; }
-    toast.success('Account created!');
+    setLoading(false);
+    if (error) { 
+        toast.error(error); 
+        return; 
+    }
+    toast.success('Account created' + (form.role === 'ngo' ? ' and Verified!' : '!'));
     navigate(form.role === 'canteen' ? '/canteen' : '/ngo');
   };
 
@@ -60,17 +67,41 @@ export default function RegisterPage() {
             <label className="block text-sm font-medium mb-1.5">Organization Name</label>
             <input value={form.organization} onChange={e => u('organization', e.target.value)} className="input-field" required />
           </div>
-          <div>
-            <label className="block text-sm font-medium mb-1.5">Location</label>
-            <input value={form.location} onChange={e => u('location', e.target.value)} className="input-field" placeholder="e.g. Mumbai Central" required />
-          </div>
-          {form.role === 'ngo' && (
+          {form.role === 'canteen' && (
             <div>
-              <label className="block text-sm font-medium mb-1.5">Capacity (meals/day)</label>
-              <input type="number" value={form.capacity} onChange={e => u('capacity', e.target.value)} className="input-field" placeholder="200" />
+              <label className="block text-sm font-medium mb-1.5">Location</label>
+              <input value={form.location} onChange={e => u('location', e.target.value)} className="input-field" placeholder="e.g. Mumbai Central" required={form.role === 'canteen'} />
             </div>
           )}
-          <button type="submit" className="btn-primary w-full">Create Account</button>
+          {form.role === 'ngo' && (
+            <>
+              <div>
+                <label className="block text-sm font-medium mb-1.5">Registration Number</label>
+                <input value={form.reg_no} onChange={e => u('reg_no', e.target.value)} className="input-field" placeholder="NGO123" required={form.role === 'ngo'} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1.5">NGO Type</label>
+                <select value={form.ngoType} onChange={e => u('ngoType', e.target.value)} className="input-field" required={form.role === 'ngo'}>
+                  <option value="Trust">Trust</option>
+                  <option value="Society">Society</option>
+                  <option value="Section 8">Section 8</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1.5">Phone</label>
+                <input type="tel" value={form.phone} onChange={e => u('phone', e.target.value)} className="input-field" placeholder="1234567890" required={form.role === 'ngo'} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1.5">Address</label>
+                <input value={form.address} onChange={e => u('address', e.target.value)} className="input-field" placeholder="e.g. Mumbai South" required={form.role === 'ngo'} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1.5">Capacity (meals/day)</label>
+                <input type="number" value={form.capacity} onChange={e => u('capacity', e.target.value)} className="input-field" placeholder="200" />
+              </div>
+            </>
+          )}
+          <button type="submit" className="btn-primary w-full" disabled={loading}>{loading ? 'Creating...' : 'Create Account'}</button>
           <p className="text-center text-sm text-muted-foreground">
             Already have an account? <Link to="/login" className="text-primary hover:underline">Sign in</Link>
           </p>

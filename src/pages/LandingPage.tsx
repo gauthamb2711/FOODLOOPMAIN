@@ -65,7 +65,7 @@ export default function LandingPage() {
             <div className="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center">
               <Leaf className="w-5 h-5 text-primary" />
             </div>
-            <span className="text-lg font-bold gradient-text">FoodLoop AI</span>
+            <span className="text-lg font-bold gradient-text">Food Loop</span>
           </div>
           <div className="flex items-center gap-3">
             <button onClick={() => navigate('/login')} className="btn-ghost text-sm py-2 px-4">Sign In</button>
@@ -170,7 +170,7 @@ export default function LandingPage() {
         <div className="max-w-5xl mx-auto flex items-center justify-between text-sm text-muted-foreground">
           <div className="flex items-center gap-2">
             <Leaf className="w-4 h-4 text-primary" />
-            <span>FoodLoop AI</span>
+            <span>Food Loop</span>
           </div>
           <span>Reducing food waste with technology</span>
         </div>

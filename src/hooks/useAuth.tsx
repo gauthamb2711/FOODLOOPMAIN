@@ -1,10 +1,11 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { getData, setData, User } from '@/lib/store';
+import { User } from '@/lib/store';
+import { loginUser, registerUser } from '@/lib/api';
 
 interface AuthContextType {
   user: User | null;
-  login: (email: string, password: string) => string | null;
-  register: (user: Omit<User, 'id'>) => string | null;
+  login: (identifier: string, password?: string, isNgo?: boolean) => Promise<string | null>;
+  register: (user: Omit<User, 'id'>) => Promise<{ error: string | null; status?: string }>;
   logout: () => void;
 }
 
@@ -14,32 +15,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
-    const current = getData<User>('currentUser');
-    if (current) setUser(current);
+    // Rehydrate user from memory
+    try {
+      const stored = localStorage.getItem('currentUser');
+      if (stored) {
+        setUser(JSON.parse(stored));
+      }
+    } catch (e) {
+      console.error('Failed to parse user', e);
+    }
   }, []);
 
-  const login = (email: string, password: string): string | null => {
-    const users = getData<User[]>('users') || [];
-    const found = users.find(u => u.email === email && u.password === password);
-    if (!found) return 'Invalid email or password';
-    setData('currentUser', found);
-    setUser(found);
-    return null;
+  const login = async (identifier: string, password?: string, isNgo?: boolean): Promise<string | null> => {
+    try {
+      const res = await loginUser({ email: identifier, password });
+      const { token, ...userData } = res.data;
+      
+      if (isNgo && userData.role !== 'ngo') return 'Invalid NGO credentials';
+      if (!isNgo && userData.role !== 'canteen') return 'Invalid Canteen credentials';
+
+      localStorage.setItem('token', token);
+      localStorage.setItem('currentUser', JSON.stringify({ ...userData, id: userData._id }));
+      setUser({ ...userData, id: userData._id });
+      return null;
+    } catch (err: any) {
+      return err.response?.data?.message || 'Login failed Check backend connection';
+    }
   };
 
-  const register = (userData: Omit<User, 'id'>): string | null => {
-    const users = getData<User[]>('users') || [];
-    if (users.find(u => u.email === userData.email)) return 'Email already registered';
-    const newUser: User = { ...userData, id: `${userData.role}-${Date.now()}` };
-    users.push(newUser);
-    setData('users', users);
-    setData('currentUser', newUser);
-    setUser(newUser);
-    return null;
+  const register = async (userData: Omit<User, 'id'>): Promise<{ error: string | null; status?: string }> => {
+    try {
+      const res = await registerUser(userData);
+      const { token, ...newUserData } = res.data;
+      
+      localStorage.setItem('token', token);
+      localStorage.setItem('currentUser', JSON.stringify({ ...newUserData, id: newUserData._id }));
+      setUser({ ...newUserData, id: newUserData._id });
+      return { error: null, status: newUserData.status };
+    } catch (err: any) {
+      return { error: err.response?.data?.message || 'Registration failed' };
+    }
   };
 
   const logout = () => {
     localStorage.removeItem('currentUser');
+    localStorage.removeItem('token');
     setUser(null);
   };
 
@@ -49,6 +69,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     </AuthContext.Provider>
   );
 }
+
 
 export function useAuth() {
   const ctx = useContext(AuthContext);

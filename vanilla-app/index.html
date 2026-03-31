@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FoodLoop Sync | Standalone Map</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+</head>
+
+<body>
+  <div class="app-container">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="logo">
+        <span class="icon">🥗</span>
+        <h1>FoodLoop</h1>
+      </div>
+
+      <section class="form-section">
+        <h2>Post Surplus Food</h2>
+        <form id="foodForm">
+          <div class="field">
+            <label>Food Name</label>
+            <input type="text" id="foodName" placeholder="e.g. Rice, Biryani" required>
+          </div>
+          <div class="field">
+            <label>Quantity</label>
+            <input type="text" id="foodQty" placeholder="e.g. 20kg" required>
+          </div>
+          <div class="field">
+            <label>Location (Lat, Lng)</label>
+            <div class="coord-inputs">
+              <input type="number" step="any" id="lat" placeholder="Latitude" required>
+              <input type="number" step="any" id="lng" placeholder="Longitude" required>
+            </div>
+          </div>
+          <button type="button" id="useLocationBtn" class="btn-secondary">📍 Use My Location</button>
+          <button type="submit" class="btn-primary">Submit Surplus</button>
+        </form>
+      </section>
+
+      <section class="info-section">
+        <h3>Legend</h3>
+        <ul class="legend">
+          <li><span class="dot green"></span> Near (< 3km)</li>
+          <li><span class="dot orange"></span> Requested</li>
+          <li><span class="dot red"></span> Far (> 7km)</li>
+        </ul>
+      </section>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <div id="map"></div>
+      <div id="no-data" class="hidden">No surplus food available nearby.</div>
+    </main>
+  </div>
+
+  <!-- Google Maps API (Replace YOUR_API_KEY) -->
+  <script src="app.js"></script>
+  <script async defer src="https://maps.googleapis.com/maps/api/js?key=YOUR_API_KEY&callback=initMap"></script>
+</body>
+
+</html>
