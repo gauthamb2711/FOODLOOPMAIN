@@ -2,7 +2,9 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { Leaf } from 'lucide-react';
+import api from '@/lib/api';
 import { toast } from 'sonner';
+import { ShieldCheck } from 'lucide-react';
 
 export default function LoginPage() {
   const [role, setRole] = useState<'canteen' | 'ngo'>('canteen');
@@ -11,6 +13,28 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
+
+  const handleDemoLogin = async (type: 'canteen' | 'ngo') => {
+    setLoading(true);
+    try {
+      // Ensure users exist
+      await api.get('/auth/seed');
+      
+      const email = type === 'canteen' ? 'demo-canteen@foodloop.com' : 'demo-ngo@foodloop.com';
+      const pass = 'demo123';
+      
+      const err = await login(email, pass, type === 'ngo');
+      if (err) { toast.error(err); }
+      else {
+        toast.success(`Logged in as Demo ${type === 'canteen' ? 'Canteen' : 'NGO'}`);
+        navigate(type === 'canteen' ? '/canteen' : '/ngo');
+      }
+    } catch (e: any) {
+      toast.error('Failed to seed/login: ' + e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -58,6 +82,21 @@ export default function LoginPage() {
           <button type="submit" className="btn-primary w-full" disabled={loading}>
             {loading ? 'Signing in...' : 'Sign In'}
           </button>
+
+          <div className="relative py-2">
+            <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-border" /></div>
+            <div className="relative flex justify-center text-xs uppercase"><span className="bg-background px-2 text-muted-foreground">Or Quick Access</span></div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <button type="button" onClick={() => handleDemoLogin('canteen')} className="flex items-center justify-center gap-2 py-2 px-3 rounded-lg border border-primary/20 bg-primary/5 hover:bg-primary/10 text-xs font-medium transition-all text-primary">
+              <ShieldCheck className="w-3.5 h-3.5" /> Canteen Demo
+            </button>
+            <button type="button" onClick={() => handleDemoLogin('ngo')} className="flex items-center justify-center gap-2 py-2 px-3 rounded-lg border border-primary/20 bg-primary/5 hover:bg-primary/10 text-xs font-medium transition-all text-primary">
+              <ShieldCheck className="w-3.5 h-3.5" /> NGO Demo
+            </button>
+          </div>
+
           <p className="text-center text-sm text-muted-foreground">
             Don't have an account? <Link to="/register" className="text-primary hover:underline">Register</Link>
           </p>

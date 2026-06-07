@@ -4,12 +4,12 @@ import { motion } from 'framer-motion';
 import { useAuth } from '@/hooks/useAuth';
 import { 
   getData, setData, SurplusItem, getMetrics, 
-  getNotifications, markNotificationRead, clearNotifications, AppNotification, User
+  getNotifications, markNotificationRead, clearNotifications, AppNotification, User, useStoreListener
 } from '@/lib/store';
 import { generateFoodReport } from '@/lib/pdf';
 import { toast } from 'sonner';
 import {
-  Heart, Truck, Clock, RefreshCw, FileText, Download, CheckCircle, ShieldAlert, BadgeCheck, XCircle, Search, ThumbsUp, MapPin, Navigation, Bell, MessageSquare, History, AlertTriangle, Play, CheckCircle2, QrCode, ClipboardCheck, Sparkles, LogOut, LayoutDashboard, Package, ShieldCheck, Leaf, ArrowRight, Check, FileDown, Trash2, X
+  Heart, Truck, Clock, RefreshCw, FileText, Download, CheckCircle, ShieldAlert, BadgeCheck, XCircle, Search, ThumbsUp, MapPin, Navigation, Bell, MessageSquare, History, AlertTriangle, Play, CheckCircle2, QrCode, ClipboardCheck, Sparkles, LogOut, LayoutDashboard, Package, ShieldCheck, Leaf, ArrowRight, Check, FileDown, Trash2, X, Plus, HeartHandshake
 } from 'lucide-react';
 import * as api from '@/lib/api';
 import { io } from 'socket.io-client';
@@ -24,6 +24,7 @@ export default function NgoDashboard() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [tab, setTab] = useState<'overview' | 'available' | 'requests' | 'impact' | 'messages' | 'map' | 'notifications' | 'smart-picks' | 'trust-logs'>('overview');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [viewMode, setViewMode] = useState<'grid' | 'map'>('grid');
   const [available, setAvailable] = useState<SurplusItem[]>([]);
   const [myRequests, setMyRequests] = useState<SurplusItem[]>([]);
@@ -63,10 +64,17 @@ export default function NgoDashboard() {
       allSurplus = getData<SurplusItem[]>('surplusFood') || [];
     }
 
-    setAvailable(allSurplus.filter((s: SurplusItem) => 
-      s.status === 'available' || 
-      (s.requestedBy === user.id && ['requested', 'approved', 'on_the_way'].includes(s.status))
-    ));
+    setAvailable(allSurplus.filter((s: SurplusItem) => {
+      const now = new Date();
+      const createdAt = new Date(s.createdAt || Date.now());
+      const fallbackExpiry = new Date(createdAt.getTime() + 24 * 3600000); // 24h fallback
+      const itemExpiry = s.expiresAt ? new Date(s.expiresAt) : fallbackExpiry;
+      const isExpired = s.status === 'available' && now > itemExpiry;
+      if (isExpired) return false;
+
+      return s.status === 'available' || 
+             (s.requestedBy === user.id && ['requested', 'approved', 'on_the_way'].includes(s.status));
+    }));
     
     const myReqs = allSurplus.filter((s: SurplusItem) => s.requestedBy === user.id);
     
@@ -139,21 +147,31 @@ export default function NgoDashboard() {
 
 
   useEffect(() => {
-    if (!user || user.role !== 'ngo') { navigate('/login'); return; }
+    if (!user || user.role !== 'ngo') { navigate('/ngo/login'); return; }
     refresh();
-    const handler = () => refresh();
-    window.addEventListener('store-update', handler);
-    window.addEventListener('storage', handler);
-    
-    const socket = io(import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000');
-    socket.on('surplus_updated', handler);
-    
-    return () => {
-        window.removeEventListener('store-update', handler);
-        window.removeEventListener('storage', handler);
-        socket.disconnect();
-    };
+
+    // Real-time Expiry Heartbeat - Refresh UI every 30s to check if food has expired
+    const interval = setInterval(() => {
+      refresh();
+    }, 30000);
+    return () => clearInterval(interval);
   }, [user, navigate, refresh]);
+
+  useStoreListener(['surplusFood', 'chatMessages'], refresh);
+
+  // Real-time Chat Toasts for LocalStorage mode
+  useStoreListener(['chatMessages'], () => {
+    if (tab !== 'messages') {
+      const msgs = getData<ChatMessage[]>('chatMessages') || [];
+      const last = msgs[msgs.length - 1];
+      if (last && last.receiverId === user?.id && !last.read) {
+         toast.info(`New message: "${last.text.substring(0, 30)}..."`, {
+           description: "Click to view",
+           action: { label: "View", onClick: () => setTab('messages') }
+         });
+      }
+    }
+  });
 
   const [activeHandoverItem, setActiveHandoverItem] = useState<SurplusItem | null>(null);
   const [handoverForm, setHandoverForm] = useState({
@@ -174,11 +192,16 @@ export default function NgoDashboard() {
   const requestPickup = async (item: SurplusItem) => {
     if (!user) return;
     try {
-      await api.updateSurplus(item.id, { status: 'requested', action: 'requested', actor: 'NGO' });
+      await api.updateSurplus(item.id, { 
+        status: 'requested', 
+        requestedBy: user.id,
+        action: 'requested', 
+        actor: 'NGO' 
+      });
       toast.success(`Pickup requested for ${item.quantity} kg of ${item.food}`);
       refresh();
     } catch(err) {
-      toast.error('Failed to request pickup. Backend might be offline.');
+      toast.error('Failed to request pickup.');
     }
   };
 
@@ -282,38 +305,48 @@ export default function NgoDashboard() {
   return (
     <div className="flex h-screen overflow-hidden bg-background">
       {/* Sidebar */}
-      <aside className="w-64 bg-card/80 backdrop-blur-xl border-r border-border/50 flex flex-col flex-shrink-0">
-        <div className="h-16 flex items-center px-6 border-b border-border/50">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center">
-              <Leaf className="w-5 h-5 text-primary" />
+      <aside className={`${isSidebarOpen ? 'w-64' : 'w-20'} transition-all duration-300 bg-card/80 backdrop-blur-xl border-r border-border/50 flex flex-col flex-shrink-0 z-20`}>
+        <div className="h-16 flex items-center justify-between px-6 border-b border-border/50">
+          <div className={`flex items-center gap-3 ${!isSidebarOpen && 'justify-center w-full'}`}>
+            <div className="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center flex-shrink-0">
+              <HeartHandshake className="w-5 h-5 text-blue-500" />
             </div>
-            <div>
-              <span className="text-lg font-bold gradient-text">Food Loop</span>
-            </div>
+            {isSidebarOpen && (
+              <div>
+                <span className="font-bold text-sm bg-clip-text text-transparent bg-gradient-to-br from-blue-400 to-cyan-400">NGO Portal</span>
+              </div>
+            )}
           </div>
         </div>
-        <div className="px-6 py-4 border-b border-border/50">
-          <div className="font-medium truncate" title={user.organization}>{user.organization}</div>
-          <div className="text-xs text-muted-foreground capitalize">{user.role} Dashboard</div>
-        </div>
+        {isSidebarOpen && (
+          <div className="px-6 py-4 border-b border-border/50">
+            <div className="font-medium truncate" title={user.organization}>{user.organization}</div>
+            <div className="text-xs text-muted-foreground capitalize">{user.role} Dashboard</div>
+          </div>
+        )}
         <nav className="flex-1 overflow-y-auto p-4 space-y-1">
           {tabs.map(t => (
             <button key={t.id} onClick={() => setTab(t.id)}
-              className={`flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium transition-all relative ${tab === t.id ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'}`}>
-              <t.icon className="w-4 h-4" /> 
-              {t.label}
+              className={`flex items-center relative w-full rounded-lg text-sm font-medium transition-all ${isSidebarOpen ? 'gap-3 px-3 py-2.5' : 'justify-center p-3'} ${tab === t.id ? 'bg-blue-500/10 text-blue-500' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'}`}
+              title={!isSidebarOpen ? t.label : ''}
+            >
+              <t.icon className="w-4 h-4 flex-shrink-0" />
+              {isSidebarOpen && t.label}
               {t.badge > 0 && (
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 flex h-5 w-5 items-center justify-center rounded-full bg-secondary text-[10px] font-bold text-white border-2 border-background animate-pulse">
-                  {t.badge}
+                <span className={`absolute bg-blue-600 text-[10px] font-bold text-white border-2 border-background animate-pulse flex items-center justify-center rounded-full ${isSidebarOpen ? 'right-3 top-1/2 -translate-y-1/2 h-5 w-5' : 'top-1 right-1 h-3 w-3'}`}>
+                  {isSidebarOpen ? t.badge : ''}
                 </span>
               )}
             </button>
           ))}
         </nav>
-        <div className="p-4 border-t border-border/50">
-          <button onClick={() => { logout(); navigate('/'); }} className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors">
-            <LogOut className="w-4 h-4" /> Logout
+        <div className="p-4 border-t border-border/50 space-y-2">
+          <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className={`flex items-center w-full rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors ${isSidebarOpen ? 'gap-2 px-3 py-2' : 'justify-center p-3'}`} title="Toggle Sidebar">
+            {isSidebarOpen ? <X className="w-4 h-4 text-blue-500" /> : <Plus className="w-4 h-4 text-blue-500" />}
+            {isSidebarOpen && "Collapse"}
+          </button>
+          <button onClick={() => { logout(); navigate('/ngo/login'); }} className={`flex items-center w-full rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors ${isSidebarOpen ? 'gap-2 px-3 py-2' : 'justify-center p-3'}`} title="Logout">
+            <LogOut className="w-4 h-4" /> {isSidebarOpen && "Logout"}
           </button>
         </div>
       </aside>
@@ -790,13 +823,7 @@ export default function NgoDashboard() {
               <div className="grid gap-4">
               {available.map(item => {
                 const now = new Date();
-                const expiry = new Date();
-                if (item.expiryTime) {
-                  const [h, m] = item.expiryTime.split(':');
-                  expiry.setHours(parseInt(h));
-                  expiry.setMinutes(parseInt(m));
-                }
-                const isExpired = now > expiry;
+                const isExpired = item.status === 'available' && item.expiresAt && now > new Date(item.expiresAt);
 
                 return (
                 <div key={item.id} className={`glass-card p-6 border-l-4 transition-all flex flex-col md:flex-row md:items-center justify-between gap-6 ${
@@ -919,7 +946,11 @@ export default function NgoDashboard() {
                       <div className="text-sm text-muted-foreground mt-1">{d.canteenName} · {d.quantity} kg</div>
                     </div>
                     {d.status === 'requested' ? (
-                       <span className="status-requested flex items-center gap-2 animate-pulse"><div className="w-2 h-2 rounded-full bg-[hsl(28,85%,55%)]"></div> Awaiting Pickup</span>
+                       <span className="status-requested flex items-center gap-2 animate-pulse"><div className="w-2 h-2 rounded-full bg-[hsl(28,85%,55%)]"></div> Awaiting Approval</span>
+                    ) : d.status === 'approved' ? (
+                       <span className="status-approved flex items-center gap-2 bg-blue-500/20 text-blue-500 px-2 py-1 rounded-md border border-blue-500/20"><div className="w-2 h-2 rounded-full bg-blue-500"></div> Approved</span>
+                    ) : d.status === 'on_the_way' ? (
+                       <span className="status-transit flex items-center gap-2 bg-purple-500/20 text-purple-500 px-2 py-1 rounded-md border border-purple-500/20 animate-pulse"><div className="w-2 h-2 rounded-full bg-purple-500"></div> Picking Up...</span>
                     ) : d.status === 'completed' ? (
                        <span className="status-delivered flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-primary"></div> Completed</span>
                     ) : (

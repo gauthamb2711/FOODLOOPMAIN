@@ -5,7 +5,7 @@ import { useAuth } from '@/hooks/useAuth';
 import {
   getData, setData, genId, FoodLog, SurplusItem, User,
   predictFootfall, predictFoodQuantity, getMetrics, getRecommendations,
-  addNotification, genPickupCode
+  addNotification, genPickupCode, useStoreListener
 } from '@/lib/store';
 import { toast } from 'sonner';
 import {
@@ -23,14 +23,42 @@ import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, AreaChart, Area
 } from 'recharts';
+import { Zap } from 'lucide-react';
+
+/**
+ * Returns the definitive expiry Date for a surplus item.
+ * Priority: 1) expiresAt ISO field (set at creation), 2) compute from expiryTime relative to createdAt.
+ */
+function getItemExpiry(s: SurplusItem): Date {
+  if (s.expiresAt) return new Date(s.expiresAt);
+  const createdAt = new Date(s.createdAt || Date.now());
+  if (s.expiryTime) {
+    const [h, m] = s.expiryTime.split(':').map(Number);
+    const expiry = new Date(createdAt);
+    expiry.setHours(h, m, 0, 0);
+    // If expiry falls before createdAt on the same day, it means next morning
+    if (expiry <= createdAt) expiry.setDate(expiry.getDate() + 1);
+    return expiry;
+  }
+  // Last fallback: 6 hours after creation
+  return new Date(createdAt.getTime() + 6 * 3600000);
+}
+
+/** Returns true only if this item is available AND past its expiry. */
+function computeIsExpired(s: SurplusItem, now: Date): boolean {
+  if (s.status !== 'available') return false;
+  return now > getItemExpiry(s);
+}
 
 export default function CanteenDashboard() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [tab, setTab] = useState<'overview' | 'input' | 'post-surplus' | 'predictions' | 'surplus' | 'analytics' | 'recommendations' | 'messages' | 'map' | 'quality-check'>('overview');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [viewMode, setViewMode] = useState<'grid' | 'map'>('grid');
   const [logs, setLogs] = useState<FoodLog[]>([]);
   const [surplus, setSurplus] = useState<SurplusItem[]>([]);
+  const [activeSubTab, setActiveSubTab] = useState<'active' | 'history'>('active');
   
   const [dailyForm, setDailyForm] = useState({ 
     date: new Date().toISOString().split('T')[0], 
@@ -69,21 +97,31 @@ export default function CanteenDashboard() {
   }, [user, surplusForm.location]);
 
   useEffect(() => {
-    if (!user || user.role !== 'canteen') { navigate('/login'); return; }
+    if (!user || user.role !== 'canteen') { navigate('/canteen/login'); return; }
     refresh();
-    const handler = () => refresh();
-    window.addEventListener('store-update', handler);
-    window.addEventListener('storage', handler);
-    
-    const socket = io(import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000');
-    socket.on('surplus_updated', handler);
 
-    return () => {
-        window.removeEventListener('store-update', handler);
-        window.removeEventListener('storage', handler);
-        socket.disconnect();
-    };
+    // Real-time Expiry Heartbeat - Refresh UI every 30s to check if food has expired
+    const interval = setInterval(() => {
+      refresh();
+    }, 30000);
+    return () => clearInterval(interval);
   }, [user, navigate, refresh]);
+
+  useStoreListener(['surplusFood', 'dailyLogs', 'chatMessages'], refresh);
+
+  // Real-time Chat Toasts for LocalStorage mode
+  useStoreListener(['chatMessages'], () => {
+    if (tab !== 'messages') {
+      const msgs = getData<ChatMessage[]>('chatMessages') || [];
+      const last = msgs[msgs.length - 1];
+      if (last && last.receiverId === user?.id && !last.read) {
+         toast.info(`New message: "${last.text.substring(0, 30)}..."`, {
+           description: "Click to view",
+           action: { label: "View", onClick: () => setTab('messages') }
+         });
+      }
+    }
+  });
 
   const handleDailySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -488,9 +526,10 @@ export default function CanteenDashboard() {
       setSurplusForm({ food: '', quantity: '', preparedTime: '', expiryTime: '', location: user.location || '' });
       setTab('surplus');
       refresh();
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      toast.error('Failed to post surplus to backend.');
+      const msg = err?.response?.data?.message || 'Failed to post surplus to backend.';
+      toast.error(msg);
     }
   };
 
@@ -578,32 +617,42 @@ export default function CanteenDashboard() {
   return (
     <div className="flex h-screen overflow-hidden bg-background">
       {/* Sidebar */}
-      <aside className="w-64 bg-card/80 backdrop-blur-xl border-r border-border/50 flex flex-col flex-shrink-0">
-        <div className="h-16 flex items-center px-6 border-b border-border/50">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center">
+      <aside className={`${isSidebarOpen ? 'w-64' : 'w-20'} transition-all duration-300 bg-card/80 backdrop-blur-xl border-r border-border/50 flex flex-col flex-shrink-0 z-20`}>
+        <div className="h-16 flex items-center justify-between px-6 border-b border-border/50">
+          <div className={`flex items-center gap-3 ${!isSidebarOpen && 'justify-center w-full'}`}>
+            <div className="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center flex-shrink-0">
               <Leaf className="w-5 h-5 text-primary" />
             </div>
-            <div>
-              <span className="font-bold text-sm gradient-text">Food Loop</span>
-            </div>
+            {isSidebarOpen && (
+              <div>
+                <span className="font-bold text-sm gradient-text">Food Loop</span>
+              </div>
+            )}
           </div>
         </div>
-        <div className="px-6 py-4 border-b border-border/50">
-          <div className="font-medium truncate" title={user.organization}>{user.organization}</div>
-          <div className="text-xs text-muted-foreground capitalize">{user.role} Dashboard</div>
-        </div>
+        {isSidebarOpen && (
+          <div className="px-6 py-4 border-b border-border/50">
+            <div className="font-medium truncate" title={user.organization}>{user.organization}</div>
+            <div className="text-xs text-muted-foreground capitalize">{user.role} Dashboard</div>
+          </div>
+        )}
         <nav className="flex-1 overflow-y-auto p-4 space-y-1">
           {tabs.map(t => (
             <button key={t.id} onClick={() => setTab(t.id)}
-              className={`flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${tab === t.id ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'}`}>
-              <t.icon className="w-4 h-4" /> {t.label}
+              className={`flex items-center w-full rounded-lg text-sm font-medium transition-all ${isSidebarOpen ? 'gap-3 px-3 py-2.5' : 'justify-center p-3'} ${tab === t.id ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'}`}
+              title={!isSidebarOpen ? t.label : ''}
+            >
+              <t.icon className="w-4 h-4 flex-shrink-0" /> {isSidebarOpen && t.label}
             </button>
           ))}
         </nav>
-        <div className="p-4 border-t border-border/50">
-          <button onClick={() => { logout(); navigate('/'); }} className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors">
-            <LogOut className="w-4 h-4" /> Logout
+        <div className="p-4 border-t border-border/50 space-y-2">
+          <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className={`flex items-center w-full rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors ${isSidebarOpen ? 'gap-2 px-3 py-2' : 'justify-center p-3'}`} title="Toggle Sidebar">
+            {isSidebarOpen ? <Minus className="w-4 h-4 text-primary" /> : <Plus className="w-4 h-4 text-primary" />}
+            {isSidebarOpen && "Collapse"}
+          </button>
+          <button onClick={() => { logout(); navigate('/canteen/login'); }} className={`flex items-center w-full rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors ${isSidebarOpen ? 'gap-2 px-3 py-2' : 'justify-center p-3'}`} title="Logout">
+            <LogOut className="w-4 h-4" /> {isSidebarOpen && "Logout"}
           </button>
         </div>
       </aside>
@@ -833,7 +882,10 @@ export default function CanteenDashboard() {
                     <input type="time" value={surplusForm.preparedTime} onChange={e => setSurplusForm(f => ({ ...f, preparedTime: e.target.value }))} className="input-field border-secondary/20 focus:border-secondary/50" required />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1.5">Expiry Time</label>
+                    <label className="block text-sm font-medium mb-1.5 flex items-center justify-between">
+                      Expiry Time 
+                      <span className="text-[10px] text-muted-foreground font-normal">24h Format (e.g. 18:30)</span>
+                    </label>
                     <input type="time" value={surplusForm.expiryTime} onChange={e => setSurplusForm(f => ({ ...f, expiryTime: e.target.value }))} className="input-field border-secondary/20 focus:border-secondary/50" required />
                   </div>
                 </div>
@@ -854,14 +906,20 @@ export default function CanteenDashboard() {
         {/* Surplus Status Viewing */}
         {tab === 'surplus' && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between mb-4 gap-4">
               <div>
-                <h2 className="section-title flex items-center gap-2 regular"><Package className="w-6 h-6 text-primary" /> Active Surplus Listings</h2>
-                <p className="text-sm text-muted-foreground">Track the status of food you have posted for NGOs.</p>
+                <h2 className="section-title flex items-center gap-2 regular"><Package className="w-6 h-6 text-primary" /> Surplus Listings</h2>
+                <p className="text-sm text-muted-foreground">Monitor and coordinate your active food redistributions.</p>
               </div>
-              <div className="flex bg-muted/50 p-1 rounded-lg border border-border/50">
-                <button onClick={() => setViewMode('grid')} className={`px-4 py-1.5 rounded-md text-xs font-medium transition-all ${viewMode === 'grid' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>Grid View</button>
-                <button onClick={() => setViewMode('map')} className={`px-4 py-1.5 rounded-md text-xs font-medium transition-all ${viewMode === 'map' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>Map View</button>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex bg-muted/50 p-1 rounded-lg border border-border/50 mr-2">
+                  <button onClick={() => setActiveSubTab('active')} className={`px-4 py-1.5 rounded-md text-xs font-medium transition-all ${activeSubTab === 'active' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>Active Pickups</button>
+                  <button onClick={() => setActiveSubTab('history')} className={`px-4 py-1.5 rounded-md text-xs font-medium transition-all ${activeSubTab === 'history' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>Pickup History</button>
+                </div>
+                <div className="flex bg-muted/50 p-1 rounded-lg border border-border/50">
+                  <button onClick={() => setViewMode('grid')} className={`px-4 py-1.5 rounded-md text-xs font-medium transition-all ${viewMode === 'grid' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>Grid</button>
+                  <button onClick={() => setViewMode('map')} className={`px-4 py-1.5 rounded-md text-xs font-medium transition-all ${viewMode === 'map' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>Map</button>
+                </div>
               </div>
             </div>
             
@@ -876,54 +934,74 @@ export default function CanteenDashboard() {
               </div>
             ) : (
               <div className="grid gap-4">
-              {[...surplus].reverse().map(s => {
-                 let colorClasses = "bg-primary/20 text-primary border-primary/30";
-                 let dotColor = "bg-primary";
-                 let statusLabel = "Available";
-                 
-                 // Simple pseudo-expired detection based on current time
+               {[...surplus].reverse().filter(s => {
                  const now = new Date();
-                 const expiry = new Date();
-                 if (s.expiryTime) {
-                   const [h, m] = s.expiryTime.split(':');
-                   expiry.setHours(parseInt(h));
-                   expiry.setMinutes(parseInt(m));
-                 }
-                 const isExpired = s.status === 'available' && now > expiry;
+                 const isExpired = computeIsExpired(s, now);
                  
-                 if (s.status === 'completed') {
-                   colorClasses = "bg-muted text-muted-foreground border-border";
-                   dotColor = "bg-muted-foreground";
-                   statusLabel = "Completed";
-                 } else if (s.status === 'requested') {
-                   colorClasses = "bg-orange-500/20 text-orange-500 border-orange-500/30";
-                   dotColor = "bg-orange-500";
-                   statusLabel = `Requested by ${s.requestedByName || "NGO"}`;
-                 } else if (s.status === 'approved') {
-                   colorClasses = "bg-blue-500/20 text-blue-500 border-blue-500/30";
-                   dotColor = "bg-blue-500";
-                   statusLabel = "Approved - Awaiting pickup";
-                 } else if (s.status === 'on_the_way') {
-                   colorClasses = "bg-purple-500/20 text-purple-500 border-purple-500/30";
-                   dotColor = "bg-purple-500";
-                   statusLabel = "On the way 🚚";
-                 } else if (isExpired) {
-                   colorClasses = "bg-red-500/20 text-red-500 border-red-500/30";
-                   dotColor = "bg-red-500";
-                   statusLabel = "Expired";
+                 if (activeSubTab === 'active') {
+                   return ['available', 'requested', 'approved', 'on_the_way'].includes(s.status) && !isExpired;
+                 } else {
+                   return s.status === 'completed' || isExpired;
                  }
+               }).map(s => {
+                  const now = new Date();
+                  const isExpired = computeIsExpired(s, now);
+                  const itemExpiry = getItemExpiry(s);
 
-                 return (
-                   <div key={s.id} className="glass-card p-5 overflow-hidden">
-                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
-                       <div>
-                         <div className="font-semibold text-lg">{s.food}</div>
-                         <div className="text-sm text-muted-foreground mt-1 flex flex-wrap gap-x-4 gap-y-1">
-                           <span>Quantity: {s.quantity} kg</span>
-                           <span>Prepared: {s.preparedTime}</span>
-                           <span>Expires: {s.expiryTime}</span>
-                         </div>
-                       </div>
+                  // Time remaining calculation
+                  const diff = itemExpiry.getTime() - now.getTime();
+                  const minsRemaining = Math.max(0, Math.floor(diff / 60000));
+                  const hoursRemaining = Math.floor(minsRemaining / 60);
+                  const displayTime = hoursRemaining > 0 
+                    ? `${hoursRemaining}h ${minsRemaining % 60}m` 
+                    : `${minsRemaining}m`;
+                  
+                  let colorClasses = "bg-primary/20 text-primary border-primary/30";
+                  let dotColor = "bg-primary";
+                  let statusLabel = "Available";
+                  
+                  if (s.status === 'completed') {
+                    colorClasses = "bg-muted text-muted-foreground border-border";
+                    dotColor = "bg-muted-foreground";
+                    statusLabel = "Completed";
+                  } else if (s.status === 'requested') {
+                    colorClasses = "bg-orange-500/20 text-orange-500 border-orange-500/30";
+                    dotColor = "bg-orange-500";
+                    statusLabel = `Requested by ${s.requestedByName || "NGO"}`;
+                  } else if (s.status === 'approved') {
+                    colorClasses = "bg-blue-500/20 text-blue-500 border-blue-500/30";
+                    dotColor = "bg-blue-500";
+                    statusLabel = "Approved - Awaiting pickup";
+                  } else if (s.status === 'on_the_way') {
+                    colorClasses = "bg-purple-500/20 text-purple-500 border-purple-500/30";
+                    dotColor = "bg-purple-500";
+                    statusLabel = "On the way 🚚";
+                  } else if (isExpired) {
+                    colorClasses = "bg-red-500/20 text-red-500 border-red-500/30";
+                    dotColor = "bg-red-500";
+                    statusLabel = "Expired";
+                  }
+
+                  return (
+                    <div key={s.id} className="glass-card p-5 overflow-hidden">
+                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
+                        <div>
+                          <div className="font-semibold text-lg">{s.food}</div>
+                          <div className="text-sm text-muted-foreground mt-2 flex flex-wrap gap-x-4 gap-y-2 items-center">
+                            <span className="flex items-center gap-1.5 bg-background/50 px-2 py-1 rounded border border-border/50 text-foreground font-medium">
+                              <Package className="w-3.5 h-3.5 text-primary" /> {s.quantity} kg
+                            </span>
+                            <span className="flex items-center gap-1.5">
+                              <Clock className="w-3.5 h-3.5 text-muted-foreground" /> Posted @ {new Date(s.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                            {!isExpired && s.status === 'available' && (
+                              <span className="flex items-center gap-1.5 text-orange-500 font-medium animate-pulse">
+                                <Zap className="w-3.5 h-3.5" /> Expires in {displayTime}
+                              </span>
+                            )}
+                            {isExpired && <span className="text-red-500 font-bold">Expired</span>}
+                          </div>
+                        </div>
                        
                        <div className="flex items-center gap-4 border-t md:border-none border-border/50 pt-4 md:pt-0">
                          <div className={`px-3 py-1.5 rounded-full border ${colorClasses} text-xs font-medium flex items-center gap-2 shadow-sm`}>

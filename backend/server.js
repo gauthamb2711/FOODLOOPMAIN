@@ -76,7 +76,8 @@ app.use('/api/ai', aiRoutes);
 
 app.get('/api/health', (req, res) => res.json({ status: 'API is running' }));
 
-const PORT = process.env.PORT || 5000;
+// Default 5001 so Vite dev server can use 5000 without stealing API traffic
+const PORT = process.env.PORT || 5001;
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });

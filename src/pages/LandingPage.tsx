@@ -68,8 +68,12 @@ export default function LandingPage() {
             <span className="text-lg font-bold gradient-text">Food Loop</span>
           </div>
           <div className="flex items-center gap-3">
-            <button onClick={() => navigate('/login')} className="btn-ghost text-sm py-2 px-4">Sign In</button>
-            <button onClick={() => navigate('/register')} className="btn-primary text-sm py-2 px-4">Get Started</button>
+            <div className="hidden md:flex items-center gap-2 mr-4 border-r border-border/50 pr-4">
+              <button onClick={() => navigate('/canteen/login')} className="text-xs font-semibold hover:text-primary transition-colors">Canteen Login</button>
+              <button onClick={() => navigate('/ngo/login')} className="text-xs font-semibold hover:text-blue-500 transition-colors">NGO Login</button>
+            </div>
+            <button onClick={() => navigate('/canteen/register')} className="btn-primary text-sm py-2 px-4">Register Canteen</button>
+            <button onClick={() => navigate('/ngo/register')} className="btn-ghost border-blue-500 text-blue-500 hover:bg-blue-500/10 text-sm py-2 px-4">Register NGO</button>
           </div>
         </div>
       </nav>
@@ -96,11 +100,11 @@ export default function LandingPage() {
               AI-powered food waste prediction and redistribution network connecting canteens with NGOs to ensure no meal goes to waste.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <button onClick={() => navigate('/register')} className="btn-primary text-base flex items-center justify-center gap-2">
-                Start Reducing Waste <ArrowRight className="w-4 h-4" />
+              <button onClick={() => navigate('/canteen/register')} className="btn-primary text-base flex items-center justify-center gap-2">
+                Join as Canteen <ArrowRight className="w-4 h-4" />
               </button>
-              <button onClick={() => navigate('/login')} className="btn-ghost text-base">
-                Demo: canteen@demo.com / demo123
+              <button onClick={() => navigate('/ngo/register')} className="btn-ghost border-blue-500 text-blue-500 hover:bg-blue-500/10 text-base">
+                Join as NGO Network
               </button>
             </div>
           </motion.div>
@@ -159,9 +163,14 @@ export default function LandingPage() {
         <div className="max-w-3xl mx-auto glass-card p-10 text-center glow-border">
           <h2 className="text-3xl font-bold mb-3">Ready to Make an Impact?</h2>
           <p className="text-muted-foreground mb-6">Join the food waste reduction network today</p>
-          <button onClick={() => navigate('/register')} className="btn-primary text-base">
-            Get Started Free
-          </button>
+          <div className="flex justify-center gap-4">
+            <button onClick={() => navigate('/canteen/register')} className="btn-primary text-base">
+              Register Canteen
+            </button>
+            <button onClick={() => navigate('/ngo/register')} className="btn-primary bg-blue-600 hover:bg-blue-500 shadow-[0_0_20px_rgba(59,130,246,0.3)] text-base">
+              Register NGO
+            </button>
+          </div>
         </div>
       </section>
 

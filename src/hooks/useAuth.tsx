@@ -26,6 +26,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  useEffect(() => {
+    const onLogout = () => setUser(null);
+    window.addEventListener('auth:logout', onLogout);
+    return () => window.removeEventListener('auth:logout', onLogout);
+  }, []);
+
   const login = async (identifier: string, password?: string, isNgo?: boolean): Promise<string | null> => {
     try {
       const res = await loginUser({ email: identifier, password });
@@ -39,7 +45,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser({ ...userData, id: userData._id });
       return null;
     } catch (err: any) {
-      return err.response?.data?.message || 'Login failed Check backend connection';
+      const serverMsg = err.response?.data?.message;
+      if (serverMsg) return serverMsg;
+      if (err.code === 'ERR_NETWORK' || err.message === 'Network Error') {
+        return 'Cannot reach API. Start the backend: cd backend && npm install && npm start';
+      }
+      return err.message || 'Login failed';
     }
   };
 
@@ -53,7 +64,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser({ ...newUserData, id: newUserData._id });
       return { error: null, status: newUserData.status };
     } catch (err: any) {
-      return { error: err.response?.data?.message || 'Registration failed' };
+      const serverMsg = err.response?.data?.message;
+      if (serverMsg) return { error: serverMsg };
+      if (err.code === 'ERR_NETWORK' || err.message === 'Network Error') {
+        return { error: 'Cannot reach API. Start the backend: cd backend && npm install && npm start' };
+      }
+      return { error: err.message || 'Registration failed' };
     }
   };
 

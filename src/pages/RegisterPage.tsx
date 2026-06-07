@@ -20,7 +20,17 @@ export default function RegisterPage() {
     });
     setLoading(false);
     if (error) { 
-        toast.error(error); 
+        if (error.toLowerCase().includes('already exists')) {
+            toast.error(error, {
+                description: "Try logging in instead.",
+                action: {
+                    label: "Login",
+                    onClick: () => navigate('/login')
+                }
+            });
+        } else {
+            toast.error(error); 
+        }
         return; 
     }
     toast.success('Account created' + (form.role === 'ngo' ? ' and Verified!' : '!'));

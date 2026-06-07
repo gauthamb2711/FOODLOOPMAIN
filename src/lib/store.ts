@@ -1,3 +1,5 @@
+import { useEffect } from "react";
+
 // Centralized LocalStorage State Engine
 
 export function getData<T>(key: string): T | null {
@@ -14,13 +16,31 @@ export function setData<T>(key: string, value: T): void {
   window.dispatchEvent(new CustomEvent('store-update', { detail: { key } }));
 }
 
+export function getUserById(id: string): User | null {
+  const users = getData<User[]>('users') || [];
+  return users.find(u => u.id === id) || null;
+}
+
 export function useStoreListener(keys: string[], callback: () => void) {
-  const handler = (e: Event) => {
-    const detail = (e as CustomEvent).detail;
-    if (keys.includes(detail.key)) callback();
-  };
-  window.addEventListener('store-update', handler);
-  return () => window.removeEventListener('store-update', handler);
+  const keysString = JSON.stringify(keys);
+  useEffect(() => {
+    const handler = (e: Event) => {
+      if (e.type === 'storage') {
+        const storageEvent = e as StorageEvent;
+        if (keys.includes(storageEvent.key || '')) callback();
+      } else {
+        const detail = (e as CustomEvent).detail;
+        if (keys.includes(detail.key)) callback();
+      }
+    };
+    
+    window.addEventListener('store-update', handler);
+    window.addEventListener('storage', handler);
+    return () => {
+      window.removeEventListener('store-update', handler);
+      window.removeEventListener('storage', handler);
+    };
+  }, [keysString, callback, keys]);
 }
 
 // Types
@@ -69,6 +89,7 @@ export interface SurplusItem {
   contact?: string;
   pickupTime?: string;
   completedAt?: string;
+  expiresAt?: string;
   createdAt: string;
 
   // Digital Handover Fields
@@ -147,7 +168,7 @@ export function clearNotifications(userId: string) {
 
 // Initialize seed data
 export function initSeedData() {
-  if (getData('initialized_v4')) return;
+  if (getData('initialized_v5')) return;
 
   const canteen: User = {
     id: 'canteen-1',
@@ -209,11 +230,12 @@ export function initSeedData() {
       food: 'Biryani, Raita, Salad',
       quantity: 25,
       preparedTime: '12:00',
-      expiryTime: '18:00',
+      expiryTime: '20:00',
       status: 'available',
       location: 'Mumbai Central',
-      lat: 18.9733, lng: 72.8273, // Mumbai Central
-      createdAt: new Date(today.getTime() - 86400000).toISOString(),
+      lat: 18.9733, lng: 72.8273,
+      createdAt: new Date(today.getTime() - 3600000).toISOString(),
+      expiresAt: new Date(today.getTime() + 3 * 3600000).toISOString(),
       pickupCode: '123456',
       handoverStatus: 'pending',
       logs: [
@@ -227,11 +249,12 @@ export function initSeedData() {
       food: 'Rice, Dal, Sabzi',
       quantity: 15,
       preparedTime: '13:30',
-      expiryTime: '20:30',
+      expiryTime: '22:00',
       status: 'available',
       location: 'Dadar, Mumbai',
-      lat: 19.0178, lng: 72.8478, // Dadar
-      createdAt: new Date(today.getTime() - 3600000 * 2).toISOString(),
+      lat: 19.0178, lng: 72.8478,
+      createdAt: new Date(today.getTime() - 1800000).toISOString(),
+      expiresAt: new Date(today.getTime() + 2 * 3600000).toISOString(),
       pickupCode: '654321',
       handoverStatus: 'pending',
       logs: [
@@ -255,7 +278,7 @@ export function initSeedData() {
   setData('dailyLogs', logs);
   setData('surplusFood', surplus);
   setData('chatMessages', initialMessages);
-  setData('initialized_v4', true);
+  setData('initialized_v5', true);
 }
 
 // Derived computations

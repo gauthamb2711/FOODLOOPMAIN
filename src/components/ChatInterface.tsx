@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { User, ChatMessage } from '@/lib/store';
+import { User, ChatMessage, useStoreListener } from '@/lib/store';
 import { 
   Send, Search, MoreVertical, Phone, Video, 
   Check, CheckCheck, User as UserIcon, MessageSquare 
 } from 'lucide-react';
-import api from '@/lib/api';
+import api, { getSocketUrl } from '@/lib/api';
 import { io } from 'socket.io-client';
 
 interface ChatInterfaceProps {
@@ -22,11 +22,15 @@ export default function ChatInterface({ currentUser, initialPartnerId }: ChatInt
   const scrollRef = useRef<HTMLDivElement>(null);
   const socketRef = useRef<any>(null);
 
-  useEffect(() => {
-    // Setup Socket connection
-    socketRef.current = io(import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000');
-    socketRef.current.emit('join', currentUser.id);
+  const refreshMessages = () => {
+    if (selectedPartner) {
+      api.get(`/chat/${selectedPartner.id}`).then(res => {
+        setMessages(res.data);
+      }).catch(console.error);
+    }
+  };
 
+  useEffect(() => {
     // Fetch Partners
     api.get('/auth/users').then(res => {
       const allUsers = res.data;
@@ -38,32 +42,15 @@ export default function ChatInterface({ currentUser, initialPartnerId }: ChatInt
         if (initP) setSelectedPartner(initP);
       }
     }).catch(console.error);
-
-    return () => {
-      if (socketRef.current) socketRef.current.disconnect();
-    };
   }, [currentUser.id, initialPartnerId]);
 
-  useEffect(() => {
-    if (selectedPartner) {
-      api.get(`/chat/${selectedPartner.id}`).then(res => {
-        setMessages(res.data);
-      }).catch(console.error);
-    }
-  }, [selectedPartner]);
+  useStoreListener(['chatMessages'], refreshMessages);
 
   useEffect(() => {
-    if (!socketRef.current) return;
-    const handleReceiveMessage = (message: ChatMessage) => {
-      if (selectedPartner && (message.senderId === selectedPartner.id || message.receiverId === selectedPartner.id)) {
-        setMessages(prev => [...prev, message]);
-      }
-    };
-    socketRef.current.on('receive_message', handleReceiveMessage);
-    return () => {
-      socketRef.current.off('receive_message', handleReceiveMessage);
-    };
+    refreshMessages();
   }, [selectedPartner]);
+
+
 
   useEffect(() => {
     if (scrollRef.current) {
